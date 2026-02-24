@@ -50,10 +50,824 @@ execute:
 
 # Introduction
 
-Traditional supply chain optimization focuses primarily on cost minimization
-or efficiency maximization. However, in multi-tier supply networks, upstream
-process decisions may strongly influence downstream customer satisfaction
-through latent quality constructs.
+Supply chain network design has traditionally focused on cost minimization,
+service level maximization, or efficiency optimization under the assumption
+of exogenous demand. However, in multi-tier supply networks, upstream process
+decisions influence product quality, which in turn affects customer perception,
+satisfaction, and ultimately demand behavior.
+
+Most network optimization models treat demand as independent of upstream
+operational decisions. At the same time, the structural equation modeling (SEM)
+literature analyzes latent quality constructs but does not integrate structural
+network optimization decisions. Furthermore, Bayesian Optimization (BO)
+approaches typically focus on parameter tuning without incorporating discrete
+network design decisions.
+
+This paper proposes a unified framework that integrates:
+
+- Bayesian Structural Equation Modeling (SEM),
+- Endogenous satisfaction-driven demand,
+- Mixed-Integer Linear Programming (MILP) network design,
+- Gaussian Process–based Bayesian Optimization (BO).
+
+The key idea is that upstream process variables propagate through a latent
+quality structure, influence customer-specific multi-criteria evaluations,
+endogenize demand, and determine optimal supply chain configuration under
+epistemic uncertainty.
+
+The main contributions of this work are:
+
+1. The integration of Bayesian latent quality modeling into network design.
+2. The formulation of demand as an endogenous function of customer satisfaction.
+3. The coupling of discrete structural decisions with Gaussian Process–based Bayesian Optimization.
+4. A unified algorithm that jointly optimizes structural configuration and economic utility under uncertainty.
+
+The remainder of the paper is structured as follows. Section 2 presents
+the overall modeling framework. Section 3 formalizes the Bayesian SEM.
+Sections 4–6 develop the satisfaction, utility, and MILP components.
+Section 7 introduces the Bayesian Optimization layer.
+Section 8 presents numerical experiments.
+Section 9 concludes with managerial implications and future research directions.
+
+# Unified Model Architecture
+
+The proposed framework consists of four interconnected layers:
+
+1. **Process Layer (Multi-tier Network Structure)**  
+   Each supply chain entity $s \in \mathcal{S}$ controls a vector of process variables
+   $\mathbf{X}_s = (x_{s,1}, \dots, x_{s,J_s})$.
+   These variables represent operational, technological, or quality-related decisions.
+
+2. **Bayesian Latent Quality Layer (SEM)**  
+   Upstream process variables propagate through a latent quality construct:
+
+   $$
+   \eta_{c,p} = f(\mathbf{X}; \boldsymbol{\beta}) + \zeta
+   $$ {#eq-quality}
+
+
+   which determines customer-evaluated criteria:
+
+   $$
+   Y_{c,p,k} = \lambda_k \eta_{c,p} + \varepsilon_{c,p,k}
+   $$ {#eq-criteria}
+
+3. **Economic and Network Optimization Layer (MILP)**  
+   Customer satisfaction influences demand, which determines flow decisions
+   $\mathbf{q}$ and structural activation variables $\mathbf{z}$ through
+   a mixed-integer linear programming model.
+
+4. **Bayesian Optimization Layer (BO)**  
+   A Gaussian Process surrogate models the expected economic utility:
+
+   $$
+   f(\boldsymbol{\theta}) = \mathbb{E}[U(\boldsymbol{\theta})]
+   $$ {#eq-Gaussian}
+
+   and sequentially updates tunable parameters to maximize expected utility.
+
+These layers form a closed feedback loop:
+
+- Process decisions affect latent quality.
+- Latent quality determines satisfaction.
+- Satisfaction drives endogenous demand.
+- Demand determines optimal network structure.
+- Observed utility updates Bayesian beliefs.
+- Bayesian Optimization adjusts decision parameters.
+
+This unified architecture allows structural network design under epistemic uncertainty while explicitly incorporating latent quality propagation and customer heterogeneity.
+
+
+# Bayesian Structural Equation Model
+
+Let:
+
+- $c \in \mathcal{C}$ denote customers,
+- $p \in \mathcal{P}$ denote products,
+- $k \in \{1,\dots,K\}$ denote evaluation criteria,
+- $s \in \mathcal{S}$ denote supply chain entities (tiers, manufacturers, distribution centers).
+
+Each entity $s$ controls a vector of process variables:
+
+$$
+\mathbf{X}_s = (x_{s,1}, \dots, x_{s,J_s})
+$$
+
+Let $\mathbf{X}$ denote the stacked vector of all upstream process variables.
+
+---
+
+## 3.1 Structural Model (Latent Quality Propagation)
+
+Latent quality for product $p$ perceived by customer $c$ is defined as:
+
+$$
+\eta_{c,p} = \mathbf{X}^\top \boldsymbol{\beta} + \zeta_{c,p}
+$$ {#eq-latent}
+
+where:
+
+- $\boldsymbol{\beta}$ is the vector of structural coefficients,
+- $\zeta_{c,p} \sim \mathcal{N}(0, \sigma_\zeta^2)$ captures structural uncertainty.
+
+This formulation allows upstream process variables across multiple tiers to jointly influence perceived product quality.
+
+---
+
+## 3.2 Measurement Model (Multi-Criteria Evaluation)
+
+Each customer evaluates product $p$ according to $K$ criteria:
+
+$$
+Y_{c,p,k} = \lambda_k \eta_{c,p} + \varepsilon_{c,p,k}
+$$ {#eq-measurement}
+
+where:
+
+- $\lambda_k$ are measurement loadings,
+- $\varepsilon_{c,p,k} \sim \mathcal{N}(0, \sigma_{\varepsilon_k}^2)$.
+
+The vector form is:
+
+$$
+\mathbf{Y}_{c,p} = \boldsymbol{\lambda} \eta_{c,p} + \boldsymbol{\varepsilon}_{c,p}
+$$
+
+This hierarchical formulation allows:
+
+- Correlated multi-criteria perception,
+- Cross-tier influence propagation,
+- Explicit uncertainty quantification.
+
+---
+
+## 3.3 Bayesian Estimation
+
+We place prior distributions:
+
+$$
+\boldsymbol{\beta} \sim \mathcal{N}(0, \sigma_\beta^2 I)
+$$
+
+$$
+\lambda_k \sim \mathcal{N}(1, \sigma_\lambda^2)
+$$
+
+$$
+\sigma_\zeta, \sigma_{\varepsilon_k} \sim \text{Half-Normal}(0,1)
+$$
+
+The posterior distribution is:
+
+$$
+p(\boldsymbol{\beta}, \boldsymbol{\lambda}, \sigma_\zeta, \sigma_{\varepsilon} \mid \mathbf{Y}, \mathbf{X})
+\propto
+p(\mathbf{Y} \mid \mathbf{X}, \boldsymbol{\beta}, \boldsymbol{\lambda})
+p(\boldsymbol{\beta}) p(\boldsymbol{\lambda}) p(\sigma_\zeta) p(\sigma_{\varepsilon})
+$$
+
+Posterior draws are used to propagate epistemic uncertainty into downstream satisfaction and network optimization decisions.
+
+
+# Customer Satisfaction, Endogenous Demand, and Utility
+
+This section links the Bayesian SEM outputs (multi-criteria perceptions) to customer satisfaction, demand, and economic utility, enabling the integration with network optimization.
+
+
+
+
+## 4.1 Customer-Specific Satisfaction Aggregation
+
+Let $Y_{c,p,k}$ be the perceived score of product $p$ by customer $c$ on criterion $k$ (from Eq. @eq-measurement).  
+Each customer has a preference-weight vector:
+
+$$
+\mathbf{w}_c = (w_{c,1},\dots,w_{c,K}), \qquad w_{c,k}\ge 0,\ \ \sum_{k=1}^K w_{c,k}=1
+$$ {#eq-weights}
+
+Customer satisfaction is defined as the weighted aggregation:
+
+$$
+S_{c,p} = \sum_{k=1}^K w_{c,k}\, Y_{c,p,k}
+$$ {#eq-satisfaction}
+
+This allows heterogeneous priorities across customers (e.g., durability vs. aesthetics).
+
+---
+
+## 4.2 Endogenous Demand as a Function of Satisfaction
+
+We model demand as an increasing function of satisfaction. A convenient bounded form is the logistic demand response:
+
+$$
+D_{c,p}(\mathbf{w}_c) \;=\; \bar{D}_{c,p}\,\sigma\!\left(\alpha_{c,p}\left(S_{c,p}-\tau_{c,p}\right)\right),
+\qquad
+\sigma(u)=\frac{1}{1+e^{-u}}
+$$ {#eq-demand}
+
+where:
+
+- $\bar{D}_{c,p}$ is the market potential,
+- $\alpha_{c,p}>0$ controls sensitivity,
+- $\tau_{c,p}$ is an acceptance threshold.
+
+Because $S_{c,p}$ depends on the SEM posterior, $D_{c,p}$ is a random variable.
+
+---
+
+## 4.3 Economic Utility and Cost Structure
+
+Let $q_{c,p}$ denote delivered quantity of product $p$ to customer $c$ (MILP decision).  
+Let $r_{c,p}$ be the unit revenue (or price). The expected economic utility is:
+
+$$
+\mathbb{E}[U] \;=\;
+\sum_{c\in\mathcal{C}}\sum_{p\in\mathcal{P}}
+r_{c,p}\,\mathbb{E}\!\left[\min\{q_{c,p}, D_{c,p}(\mathbf{w}_c)\}\right]
+\;-\; C_{\text{prod}} \;-\; C_{\text{flow}} \;-\; C_{\text{struct}}
+$$ {#eq-utility}
+
+We decompose total cost as:
+
+$$
+C_{\text{prod}} = \sum_{s\in\mathcal{S}}\sum_{p\in\mathcal{P}} c^{\text{prod}}_{s,p}\, q_{s,p}
+$$
+
+$$
+C_{\text{flow}} = \sum_{(i,j)\in\mathcal{A}}\sum_{p\in\mathcal{P}} c^{\text{ship}}_{i,j,p}\, y_{i,j,p}
+$$
+
+$$
+C_{\text{struct}} = \sum_{(i,j)\in\mathcal{A}} f_{i,j}\, z_{i,j}
+$$
+
+where:
+
+- $y_{i,j,p}$ is the flow of product $p$ on arc $(i,j)$,
+- $z_{i,j}\in\{0,1\}$ indicates whether link $(i,j)$ is activated,
+- $f_{i,j}$ is the fixed cost of establishing/using link $(i,j)$.
+
+---
+
+## 4.4 Where Bayesian Optimization Enters
+
+Define the BO decision variables as the customer preference weights:
+
+$$
+\Theta \;=\; \{\mathbf{w}_c: c\in\mathcal{C}\}
+$$
+
+subject to simplex constraints (Eq. @eq-weights). The objective evaluated by BO is the expected utility under the SEM posterior and the MILP optimal response:
+
+$$
+J(\Theta) \;=\;
+\max_{z,q,y}\ \mathbb{E}[U(z,q,y;\Theta)]
+\quad\text{s.t. MILP constraints}
+$$ {#eq-bo-objective}
+
+Bayesian Optimization searches for:
+
+$$
+\Theta^\star = \arg\max_{\Theta}\ J(\Theta)
+$$ {#eq-bo-opt}
+
+In practice, the expectation in $J(\Theta)$ is computed via Monte Carlo using posterior samples from the Bayesian SEM, thereby propagating uncertainty into satisfaction, demand, and network decisions.
+
+# Bayesian Optimization Layer
+
+The decision vector to be optimized is:
+
+$$
+\Theta = \{\mathbf{w}_c : c \in \mathcal{C}\}
+$$
+
+where each $\mathbf{w}_c$ lies in the probability simplex:
+
+$$
+w_{c,k} \ge 0, \qquad \sum_{k=1}^K w_{c,k} = 1
+$$
+
+The objective function evaluated by Bayesian Optimization is:
+
+$$
+J(\Theta) = \max_{z,q,y} \mathbb{E}[U(z,q,y;\Theta)]
+$$ {#eq-bo-global}
+
+subject to all MILP constraints and where the expectation is taken over the posterior distribution of the Bayesian SEM.
+
+Because $J(\Theta)$ does not admit a closed-form expression and requires solving a MILP for each evaluation, it is treated as a black-box function.
+
+
+## 5.1 Gaussian Process Surrogate Model
+
+We model the objective as:
+
+$$
+f(\Theta) \sim \mathcal{GP}(m(\Theta), k(\Theta,\Theta'))
+$$ {#eq-gp-prior}
+
+At iteration $n$, we observe:
+
+$$
+y_i = f(\Theta_i) + \varepsilon_i,
+\qquad
+\varepsilon_i \sim \mathcal{N}(0,\sigma_\varepsilon^2)
+$$ {#eq-gp-noise}
+
+The kernel function is chosen as a squared exponential (RBF):
+
+$$
+k(\Theta,\Theta') =
+\sigma_f^2 \exp\!\left(
+-\frac{1}{2}
+\sum_{d=1}^{D}
+\frac{(\theta_d - \theta'_d)^2}{\ell_d^2}
+\right)
+$$ {#eq-gp-kernel}
+
+The posterior predictive distribution is:
+
+$$
+f(\Theta) \mid \mathcal{D}_n
+\sim
+\mathcal{N}(\mu_n(\Theta), \sigma_n^2(\Theta))
+$$ {#eq-gp-posterior}
+
+Now the acquisition function.
+
+## 5.2 Expected Improvement Acquisition Function
+
+Let
+
+$$
+f_n^{\max} = \max_{i \le n} y_i
+$$
+
+The Expected Improvement (EI) acquisition function is:
+
+$$
+\text{EI}_n(\Theta)
+=
+\mathbb{E}
+\left[
+\max(0, f(\Theta) - f_n^{\max} - \xi)
+\right]
+$$ {#eq-ei}
+
+where $\xi \ge 0$ controls exploration.
+
+Define:
+
+$$
+Z(\Theta) =
+\frac{\mu_n(\Theta) - f_n^{\max} - \xi}
+{\sigma_n(\Theta)}
+$$
+
+Then EI admits closed form:
+
+$$
+\text{EI}_n(\Theta)
+=
+(\mu_n(\Theta) - f_n^{\max} - \xi)
+\Phi(Z(\Theta))
++
+\sigma_n(\Theta)
+\phi(Z(\Theta))
+$$ {#eq-ei-closed}
+
+where $\Phi(\cdot)$ and $\phi(\cdot)$ denote the standard normal CDF and PDF.
+
+
+
+## 5.3 Integrated Bayesian–MILP Procedure
+
+The overall iterative algorithm is:
+
+1. Estimate the Bayesian SEM posterior.
+2. Draw posterior samples of $(\boldsymbol{\beta}, \boldsymbol{\lambda}, \sigma)$.
+3. For candidate $\Theta$:
+   - Compute satisfaction $S_{c,p}$.
+   - Compute endogenous demand $D_{c,p}$.
+   - Solve MILP to obtain $(z^\star, q^\star, y^\star)$.
+   - Evaluate expected utility $J(\Theta)$.
+4. Update Gaussian Process surrogate.
+5. Select next $\Theta_{n+1}$ using Expected Improvement.
+6. Repeat until convergence.
+
+This closed-loop procedure allows structural network design under epistemic uncertainty, where customer preference weights are optimally calibrated to maximize expected economic utility.
+
+
+# Numerical Experiment: Industrial Multi-Tier Case Study
+
+To demonstrate the practical applicability of the proposed Bayesian–MILP framework, we construct a large-scale industrial case inspired by a multi-tier manufacturing network.
+
+## 6.1 Network Structure
+
+The supply chain consists of:
+
+- 4 Tier 3 raw-material suppliers
+- 3 Tier 2 processors
+- 5 Tier 1 component suppliers
+- 4 manufacturers
+- 3 distribution centers
+- 6 heterogeneous customers
+- 3 product types
+
+The network includes approximately 80 potential arcs, each associated with:
+
+- Fixed structural activation cost $f_{i,j}$
+- Variable transportation cost $c^{ship}_{i,j,p}$
+
+Binary variables:
+
+$$
+z_{i,j} \in \{0,1\}
+$$
+
+Continuous flow variables:
+
+$$
+y_{i,j,p} \ge 0
+$$
+
+Production variables:
+
+$$
+q_{s,p} \ge 0
+$$
+
+---
+
+## 6.2 Multi-Product Satisfaction and Demand
+
+Each customer evaluates products using $K=4$ criteria:
+
+- Durability
+- Comfort
+- Aesthetics
+- Sustainability
+
+Customer satisfaction:
+
+$$
+S_{c,p} = \sum_{k=1}^4 w_{c,k} Y_{c,p,k}
+$$
+
+Demand follows logistic response:
+
+$$
+D_{c,p} =
+\bar{D}_{c,p}
+\frac{1}{1 + \exp(-\alpha_{c,p}(S_{c,p}-\tau_{c,p}))}
+$$
+
+Customer heterogeneity is introduced by:
+
+- Different $\mathbf{w}_c$
+- Different $\alpha_{c,p}$
+- Different thresholds $\tau_{c,p}$
+
+---
+
+## 6.3 Cost Structure
+
+Total cost:
+
+$$
+C = C_{prod} + C_{flow} + C_{struct}
+$$
+
+Production cost:
+
+$$
+C_{prod} =
+\sum_{s,p}
+c^{prod}_{s,p} q_{s,p}
+$$
+
+Flow cost:
+
+$$
+C_{flow} =
+\sum_{(i,j),p}
+c^{ship}_{i,j,p} y_{i,j,p}
+$$
+
+Structure cost:
+
+$$
+C_{struct} =
+\sum_{(i,j)}
+f_{i,j} z_{i,j}
+$$
+
+---
+
+## 6.4 Integrated Optimization Problem
+
+For a given $\Theta = \{\mathbf{w}_c\}$:
+
+$$
+\max_{z,q,y}
+\mathbb{E}[U]
+=
+\sum_{c,p}
+r_{c,p}
+\mathbb{E}[\min(q_{c,p}, D_{c,p})]
+-
+C
+$$
+
+subject to:
+
+- Flow conservation constraints
+- Capacity constraints
+- Linking constraints:
+  
+$$
+y_{i,j,p} \le M z_{i,j}
+$$
+
+- Binary structure variables
+
+---
+
+## 6.5 Bayesian Optimization Procedure
+
+At each BO iteration:
+
+1. Sample posterior parameters from SEM.
+2. Propagate uncertainty to satisfaction and demand.
+3. Solve MILP.
+4. Estimate expected utility via Monte Carlo.
+5. Update GP surrogate.
+6. Maximize Expected Improvement.
+
+Convergence is reached when:
+
+$$
+|J_{n+1} - J_n| < \varepsilon
+$$
+
+---
+
+## 6.6 Performance Metrics
+
+We report:
+
+- Expected utility
+- Network sparsity
+- Customer satisfaction distribution
+- Demand fulfillment ratio
+- Computational time
+- BO convergence curve
+
+## 6.7 Parameter Calibration and Scenario Design
+
+To ensure industrial realism, model parameters are calibrated using representative values from manufacturing and consumer goods supply chains.
+
+### Economic Parameters
+
+Unit selling prices:
+
+$$
+r_{c,p} \in [80, 150]
+$$
+
+Production costs:
+
+$$
+c^{prod}_{s,p} \in [40, 70]
+$$
+
+Transportation costs:
+
+$$
+c^{ship}_{i,j,p} \in [2, 12]
+$$
+
+Fixed structural activation costs:
+
+$$
+f_{i,j} \in [20{,}000 , 150{,}000]
+$$
+
+---
+
+### Capacity Constraints
+
+Manufacturing capacity:
+
+$$
+\sum_p q_{m,p} \le 20{,}000
+$$
+
+Distribution center capacity:
+
+$$
+\sum_{c,p} y_{d,c,p} \le 40{,}000
+$$
+
+---
+
+### Demand Potential
+
+Market potential:
+
+$$
+\bar{D}_{c,p} \in [1{,}000 , 8{,}000]
+$$
+
+Logistic sensitivity:
+
+$$
+\alpha_{c,p} \in [1.5 , 4.0]
+$$
+
+---
+
+### Customer Preference Initialization
+
+Initial weights are drawn from a Dirichlet distribution:
+
+$$
+\mathbf{w}_c \sim \text{Dirichlet}(\gamma)
+$$
+
+This ensures heterogeneity while satisfying simplex constraints.
+
+
+
+# 7. Experimental Scenarios and Comparative Analysis
+
+To evaluate the impact of the integrated Bayesian–MILP framework, we design four experimental scenarios reflecting different industrial conditions.
+
+---
+
+## 7.1 Scenario A – Deterministic Baseline
+
+In this scenario:
+
+- Demand is exogenous and fixed.
+- No SEM uncertainty is propagated.
+- Customer weights are fixed and uniform.
+- No Bayesian Optimization is applied.
+
+The MILP solves:
+
+$$
+\max_{z,q,y}
+\sum_{c,p} r_{c,p} q_{c,p}
+- C
+$$
+
+This scenario serves as a classical supply chain design benchmark.
+
+---
+
+## 7.2 Scenario B – SEM Without Bayesian Optimization
+
+In this case:
+
+- Demand depends on satisfaction.
+- SEM posterior uncertainty is propagated.
+- Customer weights are fixed.
+- No Bayesian Optimization.
+
+Objective:
+
+$$
+\max_{z,q,y}
+\mathbb{E}[U]
+$$
+
+This allows evaluating the impact of endogenous demand alone.
+
+---
+
+## 7.3 Scenario C – Full Bayesian–MILP Integration
+
+In this scenario:
+
+- SEM uncertainty is propagated.
+- Demand is endogenous.
+- Customer weights are optimized using Bayesian Optimization.
+- Structural decisions are re-optimized at each BO iteration.
+
+The full objective becomes:
+
+$$
+\Theta^\star =
+\arg\max_{\Theta}
+\left(
+\max_{z,q,y}
+\mathbb{E}[U(z,q,y;\Theta)]
+\right)
+$$
+
+This represents the proposed framework.
+
+---
+
+## 7.4 Scenario D – High Structural Cost Environment
+
+This stress-test scenario increases fixed activation costs:
+
+$$
+f_{i,j}^{high} = 1.5 \, f_{i,j}
+$$
+
+It evaluates whether the Bayesian layer shifts toward quality-intensive strategies
+instead of network expansion.
+
+---
+
+# 8. Performance Metrics
+
+The following metrics are recorded for each scenario:
+
+### 8.1 Expected Economic Utility
+
+$$
+\mathbb{E}[U]
+$$
+
+---
+
+### 8.2 Network Sparsity
+
+$$
+\text{Sparsity} =
+\frac{\sum_{i,j} z_{i,j}}{\text{Total possible links}}
+$$
+
+---
+
+### 8.3 Average Customer Satisfaction
+
+$$
+\bar{S} =
+\frac{1}{|\mathcal{C}|}
+\sum_c
+\frac{1}{|\mathcal{P}|}
+\sum_p S_{c,p}
+$$
+
+---
+
+### 8.4 Demand Fulfillment Ratio
+
+$$
+\text{Fill Rate} =
+\frac{\sum_{c,p} q_{c,p}}
+{\sum_{c,p} D_{c,p}}
+$$
+
+---
+
+### 8.5 Bayesian Optimization Convergence
+
+We track:
+
+- Utility improvement over iterations
+- GP posterior variance reduction
+- Exploration vs exploitation behavior
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Structural Equation Model Specification
 
@@ -128,7 +942,7 @@ corr.to_csv(out_tab / "corr_attributes.csv", index=True)
 
 plt.figure()
 plt.hist(eta, bins=30)
-plt.title("Simulated latent quality η")
+plt.title(r"Simulated latent quality $\eta$")
 plt.tight_layout()
 plt.savefig(out_fig / "eta_hist.png", dpi=200)
 plt.show()
