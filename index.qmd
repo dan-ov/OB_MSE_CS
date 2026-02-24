@@ -1,0 +1,478 @@
+---
+title: "Bayesian–MILP Model for Multi-Tier Supply Chains"
+subtitle: "Integrating Structural Equation Modeling and Customer Satisfaction Optimization"
+author: "Dr. Daniel A. Olivares Vera"
+date: today
+
+abstract: |
+  This paper proposes a Bayesian–MILP model that integrates structural equation
+  modeling (SEM), Bayesian optimization (BO), and mixed-integer linear programming (MILP)
+  for multi-tier supply chains oriented to customer value maximization.
+
+keywords:
+  - Bayesian Optimization
+  - Structural Equation Modeling
+  - MILP
+  - Supply Chain
+
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    html-math-method:
+      method: mathjax
+      options:
+        tex:
+          tags: ams
+  pdf:
+    toc: true
+    number-sections: true
+    documentclass: article
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fontsize: 12pt
+    include-in-header:
+      text: |
+        \usepackage{lineno}
+        \linenumbers
+
+execute:
+  echo: true
+  warning: false
+  message: false
+  freeze: false
+---
+
+[Download PDF version](index.pdf)
+
+# Introduction
+
+Traditional supply chain optimization focuses primarily on cost minimization
+or efficiency maximization. However, in multi-tier supply networks, upstream
+process decisions may strongly influence downstream customer satisfaction
+through latent quality constructs.
+
+# Structural Equation Model Specification
+
+The hierarchical SEM is defined as follows:
+
+$$
+\eta_i = \mathbf{x}_i^\top \boldsymbol{\beta} + \zeta_i
+$$ {#eq-eta}
+
+$$
+Y_{ik} = \lambda_k \eta_i + \varepsilon_{ik}
+$$ {#eq-measure}
+
+where:
+
+- $\mathbf{x}_i$ is the vector of process variables,
+- $\boldsymbol{\beta}$ are structural coefficients,
+- $\lambda_k$ are measurement loadings,
+- $\zeta_i \sim \mathcal{N}(0, \sigma_\zeta^2)$,
+- $\varepsilon_{ik} \sim \mathcal{N}(0, \sigma_{\varepsilon_k}^2)$.
+
+As shown in Eq. @eq-eta and Eq. @eq-measure,
+
+
+
+Como se muestra en la Figura @fig-arquitectura, el modelo integra la red multi-eslabón con la capa Bayesiana y la capa de optimización.
+
+![](images/Dan(2026)v2.png){#fig-arquitectura fig-cap="Arquitectura general del modelo." width=40%}
+
+# Simulated SEM Results
+
+```{python}
+#| fig-align: center
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-cap: "Distribution of simulated latent quality (η)."
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+np.random.seed(42)
+
+out_fig = Path("results/figures")
+out_tab = Path("results/tables")
+out_fig.mkdir(parents=True, exist_ok=True)
+out_tab.mkdir(parents=True, exist_ok=True)
+
+n_products = 200
+n_attributes = 3
+n_process_vars = 5
+
+beta_true = np.random.normal(0, 0.8, n_process_vars)
+lambda_true = np.array([0.9, 1.1, 0.8])
+sigma_zeta_true = 0.5
+sigma_eps_true = np.array([0.4, 0.3, 0.5])
+
+X = np.random.normal(0, 1, (n_products, n_process_vars))
+zeta = np.random.normal(0, sigma_zeta_true, n_products)
+eta = X @ beta_true + zeta
+
+Y = np.zeros((n_products, n_attributes))
+for k in range(n_attributes):
+    eps = np.random.normal(0, sigma_eps_true[k], n_products)
+    Y[:, k] = lambda_true[k] * eta + eps
+
+dfY = pd.DataFrame(Y, columns=["Durability", "Appearance", "Comfort"])
+corr = dfY.corr()
+
+corr.to_csv(out_tab / "corr_attributes.csv", index=True)
+
+plt.figure()
+plt.hist(eta, bins=30)
+plt.title("Simulated latent quality η")
+plt.tight_layout()
+plt.savefig(out_fig / "eta_hist.png", dpi=200)
+plt.show()
+
+corr.round(3)
+```
+
+# Bayesian SEM Estimation (PyMC)
+
+```{python}
+import pymc as pm
+import pytensor.tensor as pt
+import arviz as az
+
+Y_obs = dfY.values
+X_obs = X
+
+n, J = X_obs.shape
+K = Y_obs.shape[1]
+
+with pm.Model() as sem_model:
+    beta = pm.Normal("beta", mu=0.0, sigma=1.0, shape=J)
+    sigma_zeta = pm.HalfNormal("sigma_zeta", sigma=1.0)
+
+    lam = pm.Normal("lambda", mu=1.0, sigma=0.5, shape=K)
+    sigma_eps = pm.HalfNormal("sigma_eps", sigma=1.0, shape=K)
+
+    eta_latent = pm.Normal(
+        "eta",
+        mu=pt.dot(X_obs, beta),
+        sigma=sigma_zeta,
+        shape=n
+    )
+
+    muY = eta_latent[:, None] * lam[None, :]
+
+    pm.Normal("Y", mu=muY, sigma=sigma_eps, observed=Y_obs)
+
+    idata = pm.sample(
+        draws=800,
+        tune=800,
+        chains=2,
+        target_accept=0.9,
+        random_seed=42,
+        progressbar=False
+    )
+
+az.summary(idata, var_names=["beta", "lambda", "sigma_zeta", "sigma_eps"], round_to=3)
+```
+
+# Posterior Diagnostics
+
+```{python}
+#| fig-align: center
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "MCMC trace diagnostics."
+
+az.plot_trace(idata, var_names=["beta", "lambda", "sigma_zeta", "sigma_eps"])
+plt.tight_layout()
+plt.show()
+```
+
+# Parameter Recovery Check
+
+```{python}
+post = az.summary(idata, var_names=["beta", "lambda"], round_to=3)
+
+post_mean_beta = post.loc[[f"beta[{j}]" for j in range(J)], "mean"].to_numpy()
+post_mean_lam = post.loc[[f"lambda[{k}]" for k in range(K)], "mean"].to_numpy()
+
+comparison = pd.DataFrame({
+    "true": np.concatenate([beta_true, lambda_true]),
+    "posterior_mean": np.concatenate([post_mean_beta, post_mean_lam])
+})
+
+comparison
+```
+
+```{python}
+#| fig-align: center
+#| fig-width: 7
+#| fig-height: 4.5
+#| fig-cap: "Posterior mean vs true parameter values."
+
+plt.figure()
+plt.scatter(comparison["true"], comparison["posterior_mean"])
+plt.xlabel("True value")
+plt.ylabel("Posterior mean")
+plt.plot(
+    [comparison["true"].min(), comparison["true"].max()],
+    [comparison["true"].min(), comparison["true"].max()]
+)
+plt.tight_layout()
+plt.show()
+```
+
+# Integrated Architecture (Conceptual Diagram)
+
+```{mermaid}
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#ffffff",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111",
+    "fontSize": "12px"
+  },
+  "flowchart": { "curve": "linear" }
+}}%%
+
+flowchart TB
+
+  subgraph S["Red multi-eslabón (tiers)"]
+    direction TB
+    T3["Tier 3"] --> T2["Tier 2"] --> T1["Tier 1"] --> M["Manufacturer"] --> D["CD"] --> C["Customer"]
+  end
+
+  subgraph B["Capa Bayesiana (SEM + BO)"]
+    direction TB
+    X["Procesos / variables<br/>X_s"] --> ETA["Calidad latente η"]
+    ETA --> Y["Criterios Y_{c,k}"]
+    Y --> SC["Satisfacción S_c"]
+    SC --> U["Utilidad económica U"]
+  end
+
+  S --> X
+  U --> MILP["MILP: selección de enlaces z<br/>y flujos q"]
+  MILP --> S
+```
+
+# Customer Satisfaction and Endogenous Demand
+
+Customer satisfaction for product $p$ and customer $c$ is defined as:
+
+$$
+S_{c,p} = \sum_{k=1}^{K} w_{c,k} \mathbb{E}[Y_{c,p,k}]
+$$ {#eq-satisfaction}
+
+where:
+
+- $w_{c,k}$ represents the importance weight of criterion $k$ for customer $c$,
+- $\sum_{k} w_{c,k} = 1$.
+
+Demand is assumed to be endogenous and driven by satisfaction:
+
+$$
+d_{c,p} = d_{c,p}^{0} + \alpha_{c,p} S_{c,p}
+$$ {#eq-demand}
+
+where:
+
+- $d_{c,p}^{0}$ is the baseline demand,
+- $\alpha_{c,p}$ measures sensitivity of demand to satisfaction.
+
+
+
+# Economic Utility Function
+
+Total economic utility is defined as:
+
+$$
+U = \sum_{c,p} \left( price_{c,p} \cdot q_{c,p} \right)
++ \gamma \sum_{c,p} S_{c,p} q_{c,p}
+- C
+$$ {#eq-utility}
+
+where:
+
+- $q_{c,p}$ is the quantity delivered to customer $c$,
+- $\gamma$ represents the economic impact of satisfaction,
+- $C$ is total supply chain cost.
+
+
+# Cost Structure
+
+Total cost is composed of:
+
+$$
+C = C^{var} + C^{struct}
+$$ {#eq-cost-total}
+
+Variable cost:
+
+$$
+C^{var} = \sum_{(i,j),p} c^{arc}_{i,j,p} q_{i,j,p}
+$$ {#eq-cost-var}
+
+Structural cost:
+
+$$
+C^{struct} = \sum_{(i,j),p} f_{i,j} z_{i,j,p}
+$$ {#eq-cost-struct}
+
+
+# MILP Formulation
+
+The optimization problem is:
+
+$$
+\max U
+$$
+
+Subject to:
+
+Flow conservation:
+
+$$
+\sum_{i} q_{i,j,p} = \sum_{k} q_{j,k,p}
+$$
+
+Capacity constraints:
+
+$$
+\sum_{j,p} q_{i,j,p} \leq Cap_i
+$$
+
+Link activation constraints:
+
+$$
+q_{i,j,p} \leq M z_{i,j,p}
+$$
+
+Binary structure:
+
+$$
+z_{i,j,p} \in \{0,1\}
+$$
+
+
+
+# Bayesian Optimization Layer (GP + Expected Improvement)
+
+This section formalizes the Bayesian Optimization (BO) layer used to learn or adapt decision parameters (e.g., customer weights, process targets, or policy parameters) that affect satisfaction and the downstream MILP objective. Let $\boldsymbol{\theta}\in\Theta\subset\mathbb{R}^d$ denote the vector of tunable parameters. Examples include:
+
+- preference weights $\boldsymbol{\theta}=\{w_{c,k}\}$,
+- process-control targets $\boldsymbol{\theta}=\{x_{s,j}^{\star}\}$,
+- economic trade-off parameters $\boldsymbol{\theta}=\{\gamma,\alpha_{c,p}\}$,
+- or any calibration vector that impacts expected satisfaction and utility.
+
+We define the (black-box) BO objective as the **expected economic utility** induced by $\boldsymbol{\theta}$:
+
+$$
+f(\boldsymbol{\theta}) \;=\; \mathbb{E}\Big[\, U(\boldsymbol{q}^{\star}(\boldsymbol{\theta}),\boldsymbol{z}^{\star}(\boldsymbol{\theta});\,\boldsymbol{\theta}) \,\Big],
+$$ {#eq-bo-obj}
+
+where $(\boldsymbol{q}^{\star}(\boldsymbol{\theta}),\boldsymbol{z}^{\star}(\boldsymbol{\theta}))$ is the MILP optimal solution under parameterization $\boldsymbol{\theta}$, and the expectation is taken with respect to the Bayesian layer uncertainty (SEM posterior and any stochastic components).
+
+## Gaussian Process Surrogate
+
+At iteration $n$, we have evaluated $f$ at $\mathcal{D}_n=\{(\boldsymbol{\theta}_i, y_i)\}_{i=1}^n$, where:
+
+$$
+y_i \;=\; f(\boldsymbol{\theta}_i) + \epsilon_i,\qquad \epsilon_i \sim \mathcal{N}(0,\sigma_\epsilon^2).
+$$ {#eq-bo-noise}
+
+We place a Gaussian Process prior on $f$:
+
+$$
+f(\boldsymbol{\theta}) \sim \mathcal{GP}\big(m(\boldsymbol{\theta}),\,k(\boldsymbol{\theta},\boldsymbol{\theta}')\big),
+$$ {#eq-gp-prior}
+
+commonly using a constant mean $m(\boldsymbol{\theta})=m_0$ and an RBF kernel:
+
+$$
+k(\boldsymbol{\theta},\boldsymbol{\theta}') \;=\; \sigma_f^2 \exp\!\left(
+-\frac{1}{2}\sum_{\ell=1}^{d}\frac{(\theta_\ell-\theta'_\ell)^2}{\rho_\ell^2}
+\right).
+$$ {#eq-gp-kernel}
+
+Given $\mathcal{D}_n$, the GP posterior at a candidate $\boldsymbol{\theta}$ is Gaussian:
+
+$$
+f(\boldsymbol{\theta}) \mid \mathcal{D}_n \;\sim\; \mathcal{N}\!\big(\mu_n(\boldsymbol{\theta}),\,\sigma_n^2(\boldsymbol{\theta})\big),
+$$ {#eq-gp-post}
+
+with standard expressions:
+
+$$
+\mu_n(\boldsymbol{\theta}) \;=\; m(\boldsymbol{\theta}) + \mathbf{k}_n(\boldsymbol{\theta})^\top
+\big(\mathbf{K}_n+\sigma_\epsilon^2\mathbf{I}\big)^{-1}\big(\mathbf{y}-\mathbf{m}_n\big),
+$$ {#eq-gp-mu}
+
+$$
+\sigma_n^2(\boldsymbol{\theta}) \;=\; k(\boldsymbol{\theta},\boldsymbol{\theta}) -
+\mathbf{k}_n(\boldsymbol{\theta})^\top\big(\mathbf{K}_n+\sigma_\epsilon^2\mathbf{I}\big)^{-1}\mathbf{k}_n(\boldsymbol{\theta}),
+$$ {#eq-gp-sigma}
+
+where $\mathbf{K}_n=[k(\boldsymbol{\theta}_i,\boldsymbol{\theta}_j)]_{i,j}$, $\mathbf{k}_n(\boldsymbol{\theta})=[k(\boldsymbol{\theta}_1,\boldsymbol{\theta}),\ldots,k(\boldsymbol{\theta}_n,\boldsymbol{\theta})]^\top$, $\mathbf{y}=[y_1,\ldots,y_n]^\top$, and $\mathbf{m}_n=[m(\boldsymbol{\theta}_1),\ldots,m(\boldsymbol{\theta}_n)]^\top$.
+
+## Expected Improvement Acquisition
+
+Let $f_n^{\max}=\max_{i\le n} y_i$ be the best observed value so far. The Expected Improvement (EI) acquisition for maximization is:
+
+$$
+\mathrm{EI}_n(\boldsymbol{\theta}) \;=\;
+\mathbb{E}\Big[\max\big(0,\, f(\boldsymbol{\theta})-f_n^{\max}-\xi\big)\;\big|\;\mathcal{D}_n\Big],
+$$ {#eq-ei-def}
+
+where $\xi\ge 0$ controls exploration. Under the GP posterior \@eq-gp-post, EI has closed form. Define:
+
+$$
+Z(\boldsymbol{\theta}) \;=\; \frac{\mu_n(\boldsymbol{\theta})-f_n^{\max}-\xi}{\sigma_n(\boldsymbol{\theta})},
+$$ {#eq-ei-z}
+
+then:
+
+$$
+\mathrm{EI}_n(\boldsymbol{\theta}) \;=\;
+\big(\mu_n(\boldsymbol{\theta})-f_n^{\max}-\xi\big)\Phi\!\big(Z(\boldsymbol{\theta})\big)
++\sigma_n(\boldsymbol{\theta})\phi\!\big(Z(\boldsymbol{\theta})\big),
+$$ {#eq-ei-closed}
+
+with $\Phi(\cdot)$ and $\phi(\cdot)$ the standard normal CDF and PDF.
+
+The BO iteration selects the next evaluation point by:
+
+$$
+\boldsymbol{\theta}_{n+1} \;=\; \arg\max_{\boldsymbol{\theta}\in\Theta}\;\mathrm{EI}_n(\boldsymbol{\theta}).
+$$ {#eq-bo-next}
+
+## Coupling with the Bayesian SEM and MILP
+
+For each candidate $\boldsymbol{\theta}$ evaluated during BO, the workflow is:
+
+1. **SEM posterior propagation:** draw $(\boldsymbol{\beta},\boldsymbol{\lambda},\boldsymbol{\sigma}) \sim p(\cdot\mid \text{data})$ and compute $\mathbb{E}[Y_{c,p,k}\mid X,\boldsymbol{\theta}]$ (or Monte Carlo estimates).
+2. **Satisfaction / demand update:** compute $S_{c,p}(\boldsymbol{\theta})$ and any derived demand parameters.
+3. **MILP solve:** solve the MILP to obtain $(\boldsymbol{q}^{\star}(\boldsymbol{\theta}),\boldsymbol{z}^{\star}(\boldsymbol{\theta}))$.
+4. **Utility evaluation:** compute $y=f(\boldsymbol{\theta})$ as the expected (or Monte Carlo averaged) utility.
+
+This closes the Bayesian loop: BO learns $\boldsymbol{\theta}$ that maximizes the satisfaction-driven expected utility under uncertainty.
+
+
+# Conclusion
+
+The proposed framework integrates:
+
+- Bayesian Structural Equation Modeling
+- Multi-tier supply chain structure
+- Endogenous satisfaction-driven demand
+- Mixed-integer network optimization
+
+forming a unified architecture for economic utility maximization.
+
+::contentReference[oaicite:0]{index=0}

@@ -1,0 +1,22 @@
+{
+  "intro.qmd": {
+    "intro.html": "82110327",
+    "intro.tex": "4435fb18"
+  },
+  "index.qmd": {
+    "index.html": "7dc02e10",
+    "index.tex": "ba62823d"
+  },
+  "summary.qmd": {
+    "summary.html": "d5a0c292",
+    "summary.tex": "5da84f67"
+  },
+  "references.qmd": {
+    "references.html": "a2cc543d",
+    "references.tex": "5d230b18"
+  },
+  "results.qmd": {
+    "results.html": "b5656c23",
+    "results.tex": "d4dc2236"
+  }
+}

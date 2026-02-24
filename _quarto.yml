@@ -1,0 +1,34 @@
+project:
+  type: default
+
+format:
+  html:
+    toc: false
+    number-sections: true
+    theme: cosmo
+    code-fold: true
+    code-tools: true
+    df-print: paged
+
+  pdf:
+    toc: false
+    number-sections: true
+    documentclass: article
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fontsize: 12pt
+    include-in-header:
+      text: |
+        \usepackage{lineno}
+        \linenumbers
+        % Si quieres numeración más "journal" (cada 5 líneas):
+        % \modulolinenumbers[5]
+
+execute:
+  echo: true
+  warning: false
+  message: false
+  freeze: false
+
+bibliography: references.bib
+csl: elsevier-harvard.csl
